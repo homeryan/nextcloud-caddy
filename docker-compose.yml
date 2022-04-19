@@ -1,0 +1,55 @@
+version: '3'
+
+volumes:
+  nextcloud:
+  db:
+
+services:
+  db:
+    image: mariadb:latest
+    restart: always
+    command: --transaction-isolation=READ-COMMITTED --binlog-format=ROW --innodb-read-only-compressed=OFF
+    volumes:
+      - ${BASE_DIR}/db:/var/lib/mysql
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+      - MYSQL_DATABASE=nextcloud
+      - MYSQL_USER=nextcloud
+
+  backend:
+    image: nextcloud
+    container_name: nextcloud-backend
+    restart: always
+    expose:
+      - "80"
+    links:
+      - db
+    volumes:
+      - ${BASE_DIR}/nextcloud:/var/www/html
+      # https://github.com/nextcloud/docker/issues/1014#issuecomment-595887548
+      # set upload_max_filesize, post_max_size, max_execution_time, memory_limit
+      # zzz- ensures this additional .ini file will be parsed last.
+      - ./php-ini/php.ini:/usr/local/etc/php/conf.d/zzz-custom.ini
+    environment:
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+      - MYSQL_DATABASE=nextcloud
+      - MYSQL_USER=nextcloud
+      - MYSQL_HOST=db
+      - NEXTCLOUD_TRUSTED_DOMAINS=${NEXTCLOUD_TRUSTED_DOMAINS}
+      - PHP_MEMORY_LIMIT=${PHP_MEMORY_LIMIT}
+      - PHP_UPLOAD_LIMIT=${PHP_UPLOAD_LIMIT}
+
+  caddy:
+    image: caddy:latest
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    links:
+      - backend
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile
+      # https://github.com/caddyserver/caddy-docker/issues/89
+      # Caddy keeps certificates in /data/caddy/certificates/acme-v02.api.letsencrypt.org-directory
+      - ./caddy/certs:/data/caddy/certificates/acme-v02.api.letsencrypt.org-directory
